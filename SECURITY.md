@@ -14,7 +14,7 @@ We take security vulnerabilities seriously and appreciate the efforts of the com
 
 1. **Do not disclose the vulnerability publicly** until it has been addressed by the project maintainers.
 
-2. Create a new issue on the [GitHub repository](https://github.com/your/repository/issues) with the following details:
+2. Create a new issue on the [GitHub repository](https://github.com/fulco/BlueLinuxBastion/issues) with the following details:
    - A clear description of the vulnerability or security concern.
    - Steps to reproduce the vulnerability, if applicable.
    - Any additional information or context that may be helpful in understanding and resolving the issue.
