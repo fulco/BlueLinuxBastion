@@ -55,7 +55,7 @@ This file contains an example cron entry to run the `croncheck.sh` script period
 ## Configuration
 
 - The `allowed_ips.txt` file should contain the allowed IP addresses and ports for SSH access.
-- Modify the `cronline.txt` file to specify the desired frequency and path for running the `croncheck.sh` script.
+- Modify the text of `cronline.txt` file to specify the desired frequency and path for running the `croncheck.sh` script before installing it in your own `crontab`.
 
 ## Disclaimer
 
