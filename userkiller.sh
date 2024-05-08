@@ -14,10 +14,26 @@ fi
 
 # The username to exclude and root
 EXCLUDE_USER=$1
-
+SSH_CONFIG="/etc/ssh/ssh_config"
 # Generate a default password or allow a secure password input
 read -sp "Enter new password for users: " NEW_PASSWORD
 echo
+
+$INPUT_FILE_DIR = "./"
+# Define the input file and username output file
+INPUT_FILE="allowed_ips.txt"
+USERNAME_FILE="excluded_usernames.txt"
+
+if [ ! -r "$INPUT_FILE" ]; then
+  echo "Input file $INPUT_FILE does not exist or is not readable"
+  exit 1
+fi
+
+# Output the excluded username and backup username to the file
+echo "Excluded username: $EXCLUDE_USER"
+echo "Backup username: $BACKUP_USER"
+echo $EXCLUDE_USER > "$INPUT_FILE_DIR/$USERNAME_FILE"
+echo  $BACKUP_USER >> "$INPUT_FILE_DIR/$USERNAME_FILE"
 
 # Get all users with login shells who are not the excluded user and not root
 USERS=$(awk -v exclude="$EXCLUDE_USER" -F: '$7 ~ /(bash|sh)$/ && $1 != exclude && $1 != "root" {print $1}' /etc/passwd)
@@ -39,10 +55,17 @@ for USER in $USERS; do
  echo "$USER:$NEW_PASSWORD" | chpasswd
 done
 
+# Create a backup user for emergency access
+BACKUP_USER="backup_admin"
+useradd -m -s /bin/bash "$BACKUP_USER"
+echo "$BACKUP_USER:$NEW_PASSWORD" | chpasswd
+usermod -aG sudo "$BACKUP_USER"
+echo "Backup user $BACKUP_USER created with sudo access"
+
 # Part 1: Update SSHD to listen on port 98
 # Uncomment the Port line if it is commented
 sed -i 's/^#[ \t]*\(Port .*\)/\1/' $SSH_CONFIG
-sed -i '/^Port /c\Port 98' /etc/ssh/sshd_config
+sed -i '/^Port /c\Port 98' /etc/ssh/ssh_config
 systemctl restart sshd.service
 echo "SSHD has been configured to listen on port 98."
 
