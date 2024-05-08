@@ -3,10 +3,16 @@
 # Redirects all output to a log file while also displaying it on the console.
 exec > >(tee -a /var/log/userkiller.log) 2>&1
 
+# Function to log messages with timestamps
+log() {
+    local message=$1
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): $message"
+}
+
 # Checks if the script is run as root, exits if not.
 check_run_as_root() {
     if [ "$(id -u)" -ne 0 ]; then
-        echo "$(date): This script must be run as root"
+        log "This script must be run as root"
         exit 1
     fi
 }
@@ -14,22 +20,22 @@ check_run_as_root() {
 # Validates that a username is provided as a parameter.
 validate_parameters() {
     if [ -z "$1" ]; then
-        echo "$(date): Usage: $0 <username_to_exclude>"
+        log "Usage: $0 <username_to_exclude>"
         exit 1
     fi
 }
 
 # Validates that exactly one argument is provided.
 if [ $# -ne 1 ]; then
-    echo "$(date): Incorrect usage. Please provide exactly one username as an argument."
-    echo "Usage: $0 <username_to_exclude>"
+    log "Incorrect usage. Please provide exactly one username as an argument."
+    log "Usage: $0 <username_to_exclude>"
     exit 1
 fi
 
 # Validates that the SSH port is a number between 1024 and 65535.
 validate_ssh_port() {
     if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_SSH_PORT" -lt 1024 ] || [ "$NEW_SSH_PORT" -gt 65535 ]; then
-        echo "$(date): Invalid SSH port number: $NEW_SSH_PORT. It must be between 1024 and 65535."
+        log "Invalid SSH port number: $NEW_SSH_PORT. It must be between 1024 and 65535."
         exit 1
     fi
 }
@@ -55,51 +61,58 @@ setup_passwords() {
 process_users() {
     USERS=$(awk -v exclude="$EXCLUDE_USER" -F: '$7 ~ /(bash|sh)$/ && $1 != exclude && $1 != "root" {print $1}' /etc/passwd)
     for USER in $USERS; do
-        echo "$(date): Processing user $USER"
+        log "Processing user $USER"
 
         # Kill all processes for the user
         if pkill -u $USER; then
-            echo "$(date): Successfully killed processes for $USER."
+            log "Successfully killed processes for $USER."
         else
-            echo "$(date): Failed to kill processes for $USER. User may not have been running any processes." >&2
+            log "Failed to kill processes for $USER. User may not have been running any processes." >&2
         fi
 
         # Remove user's crontab
         if crontab -r -u $USER 2>/dev/null; then
-            echo "$(date): Successfully removed crontab for $USER."
+            log "Successfully removed crontab for $USER."
         else
-            echo "$(date): Failed to remove crontab for $USER or no crontab exists." >&2
+            log "Failed to remove crontab for $USER or no crontab exists." >&2
             # Continue to the next user
             continue
         fi
 
         # Update user's password
         if echo "$USER:$NEW_PASSWORD" | chpasswd; then
-            echo "$(date): Password updated successfully for $USER."
+            log "Password updated successfully for $USER."
         else
-            echo "$(date): Failed to update password for $USER." >&2
+            log "Failed to update password for $USER." >&2
             # Continue to the next user
             continue
         fi
     done
 }
 
-# Creates a backup user with sudo privileges.
+# Creates a backup user with sudo privileges if it doesn't exist.
 create_backup_user() {
     BACKUP_USER="backup_admin"
-    if ! useradd -m -s /bin/bash "$BACKUP_USER"; then
-        echo "$(date): Failed to create backup user $BACKUP_USER"
-        exit 1
+    if id "$BACKUP_USER" >/dev/null 2>&1; then
+        log "Backup user $BACKUP_USER already exists. Skipping creation."
+    else
+        if useradd -m -s /bin/bash "$BACKUP_USER"; then
+            if echo "$BACKUP_USER:$NEW_PASSWORD" | chpasswd; then
+                if usermod -aG sudo "$BACKUP_USER"; then
+                    log "Backup user $BACKUP_USER created with sudo access"
+                else
+                    log "Failed to add backup user $BACKUP_USER to sudo group"
+                    exit 1
+                fi
+            else
+                log "Failed to set password for backup user $BACKUP_USER"
+                exit 1
+            fi
+        else
+            log "Failed to create backup user $BACKUP_USER"
+            exit 1
+        fi
     fi
-    if ! echo "$BACKUP_USER:$NEW_PASSWORD" | chpasswd; then
-        echo "$(date): Failed to set password for backup user $BACKUP_USER"
-        exit 1
-    fi
-    if ! usermod -aG sudo "$BACKUP_USER"; then
-        echo "$(date): Failed to add backup user $BACKUP_USER to sudo group"
-        exit 1
-    fi
-    echo "$(date): Backup user $BACKUP_USER created with sudo access"
 }
 
 # Updates the SSH daemon configuration to listen on a new port.
@@ -107,20 +120,20 @@ update_sshd_config() {
     SSHD_CONFIG="/etc/ssh/ssh_config"
 
     if [ ! -f "$SSHD_CONFIG" ]; then
-        echo "$(date): SSH configuration file not found at $SSHD_CONFIG."
+        log "SSH configuration file not found at $SSHD_CONFIG."
         exit 1
     fi
 
     if ! sed -i '/^#[ \t]*Port /s/^#//' "$SSHD_CONFIG" || ! sed -i "/^Port /c\\Port $NEW_SSH_PORT" "$SSHD_CONFIG"; then
-        echo "$(date): Failed to modify Port line in $SSHD_CONFIG."
+        log "Failed to modify Port line in $SSHD_CONFIG."
         exit 1
     fi
 
     if ! systemctl restart sshd.service; then
-        echo "$(date): Failed to restart SSH service."
+        log "Failed to restart SSH service."
         exit 1
     fi
-    echo "$(date): sshd has been configured to listen on port $NEW_SSH_PORT."
+    log "sshd has been configured to listen on port $NEW_SSH_PORT."
 }
 
 # Converts an IP range into individual IPs and outputs them.
@@ -142,14 +155,14 @@ ip_range_to_ips() {
 configure_firewall() {
     if command -v ufw >/dev/null 2>&1; then
         # Configuring firewall with ufw
-        echo "$(date): Configuring firewall with ufw..."
+        log "Configuring firewall with ufw..."
         ufw --force reset
         ufw default deny incoming
         ufw default allow outgoing
 
         # Allow new SSH port globally
         ufw allow $NEW_SSH_PORT comment 'Global SSH access'
-        echo "$(date): Allowed global access on the new SSH port $NEW_SSH_PORT"
+        log "Allowed global access on the new SSH port $NEW_SSH_PORT"
 
         # Process firewall rules from a file
         while IFS=' ' read -r ip_or_range port; do
@@ -157,18 +170,18 @@ configure_firewall() {
                 # Expand IP ranges into individual IPs for ufw
                 for ip in $(ip_range_to_ips "$ip_or_range"); do
                     ufw allow from "$ip" to any port $port comment 'Range Specified port'
-                    echo "$(date): Allowed $ip on port $port"
+                    log "Allowed $ip on port $port"
                 done
             else
                 # Handle single IP/CIDR
                 ufw allow from "$ip_or_range" to any port $port comment 'Specified port'
-                echo "$(date): Allowed $ip_or_range on port $port"
+                log "Allowed $ip_or_range on port $port"
             fi
         done < "$INPUT_FILE"
         ufw --force enable
-        echo "$(date): UFW rules have been updated based on $INPUT_FILE."
+        log "UFW rules have been updated based on $INPUT_FILE."
     elif command -v iptables >/dev/null 2>&1; then
-        echo "$(date): Configuring firewall with iptables..."
+        log "Configuring firewall with iptables..."
         # Flush existing rules
         iptables -F
         # Set default policies
@@ -178,23 +191,23 @@ configure_firewall() {
 
         # Allow SSH on the new port globally
         iptables -A INPUT -p tcp --dport $NEW_SSH_PORT -j ACCEPT
-        echo "$(date): Allowed global access on the new SSH port $NEW_SSH_PORT"
+        log "Allowed global access on the new SSH port $NEW_SSH_PORT"
 
         # Process firewall rules from a file
         while IFS=' ' read -r ip_or_range port; do
             if [[ "$ip_or_range" == *-* ]]; then
                 # Handle IP ranges using CIDR notation for iptables
                 iptables -A INPUT -p tcp -m iprange --src-range $ip_or_range --dport $port -j ACCEPT
-                echo "$(date): Allowed $ip_or_range on port $port"
+                log "Allowed $ip_or_range on port $port"
             else
                 # Handle single IP/CIDR
                 iptables -A INPUT -p tcp -s "$ip_or_range" --dport $port -j ACCEPT
-                echo "$(date): Allowed $ip_or_range on port $port"
+                log "Allowed $ip_or_range on port $port"
             fi
         done < "$INPUT_FILE"
-        echo "$(date): iptables rules have been updated based on $INPUT_FILE."
+        log "iptables rules have been updated based on $INPUT_FILE."
     else
-        echo "$(date): No known firewall (ufw or iptables) is active on this system."
+        log "No known firewall (ufw or iptables) is active on this system."
     fi
 }
 
@@ -254,7 +267,7 @@ exit 0
 EOL
 
     chmod +x croncheck.sh
-    echo "$(date): croncheck.sh script generated successfully."
+    log "croncheck.sh script generated successfully."
 }
 
 # Generates the cronline.txt file
@@ -263,7 +276,13 @@ generate_cronline_file() {
 0 * * * * $(pwd)/croncheck.sh || echo "\$(date): Script execution failed" >> /var/log/croncheck_failure.log
 EOL
 
-    echo "$(date): cronline.txt file generated successfully."
+    log "cronline.txt file generated successfully."
+}
+
+# Log processes and their associated executables
+log_processes() {
+    log "Logging processes and their associated executables"
+    sudo ls -l /proc/[0-9]*/exe 2>/dev/null | awk '/ -> / && !/\/usr\/(lib(exec)?|s?bin)\// {print $9, $10, $11}' | sed 's,/proc/\([0-9]*\)/exe,\1,' | tee -a /var/log/process_executables.log
 }
 
 # Main function to execute the script
@@ -275,13 +294,18 @@ main() {
     INPUT_FILE="allowed_ips.txt"  # Define your input file name here
     validate_ssh_port "$NEW_SSH_PORT"
     setup_passwords
+
+    log_processes  # Log processes before making changes
+
     process_users
     create_backup_user
     update_sshd_config
     configure_firewall
     generate_croncheck_script
     generate_cronline_file
-    echo "$(date): Operations complete for all users except $EXCLUDE_USER, $BACKUP_USER, and root."
+    log "Operations complete for all users except $EXCLUDE_USER, $BACKUP_USER, and root."
+
+    log_processes  # Log processes after making changes
 }
 
 main "$@"
