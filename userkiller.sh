@@ -19,6 +19,7 @@ validate_parameters() {
     fi
 }
 
+# Validates that exactly one argument is provided.
 if [ $# -ne 1 ]; then
     echo "$(date): Incorrect usage. Please provide exactly one username as an argument."
     echo "Usage: $0 <username_to_exclude>"
@@ -36,9 +37,9 @@ validate_ssh_port() {
 # Prompts the user for a new password and verifies it.
 setup_passwords() {
     while true; do
-        read -sp "Enter new password for users: " NEW_PASSWORD
+        read -rsp "Enter new password for users: " NEW_PASSWORD
         echo
-        read -sp "Repeat new password: " REPEAT_PASSWORD
+        read -rsp "Repeat new password: " REPEAT_PASSWORD
         echo
         if [ "$NEW_PASSWORD" != "$REPEAT_PASSWORD" ]; then
             echo "Passwords do not match. Please try again."
@@ -64,11 +65,12 @@ process_users() {
         fi
 
         # Remove user's crontab
-        if crontab -r -u $USER; then
+        if crontab -r -u $USER 2>/dev/null; then
             echo "$(date): Successfully removed crontab for $USER."
         else
             echo "$(date): Failed to remove crontab for $USER or no crontab exists." >&2
-            continue  # Optionally skip further actions for this user and move to the next
+            # Continue to the next user
+            continue
         fi
 
         # Update user's password
@@ -76,7 +78,8 @@ process_users() {
             echo "$(date): Password updated successfully for $USER."
         else
             echo "$(date): Failed to update password for $USER." >&2
-            continue  # Optionally skip further actions for this user and move to the next
+            # Continue to the next user
+            continue
         fi
     done
 }
@@ -84,8 +87,16 @@ process_users() {
 # Creates a backup user with sudo privileges.
 create_backup_user() {
     BACKUP_USER="backup_admin"
-    if ! useradd -m -s /bin/bash "$BACKUP_USER" || ! echo "$BACKUP_USER:$NEW_PASSWORD" | chpasswd || ! usermod -aG sudo "$BACKUP_USER"; then
-        echo "$(date): Failed to setup backup user $BACKUP_USER"
+    if ! useradd -m -s /bin/bash "$BACKUP_USER"; then
+        echo "$(date): Failed to create backup user $BACKUP_USER"
+        exit 1
+    fi
+    if ! echo "$BACKUP_USER:$NEW_PASSWORD" | chpasswd; then
+        echo "$(date): Failed to set password for backup user $BACKUP_USER"
+        exit 1
+    fi
+    if ! usermod -aG sudo "$BACKUP_USER"; then
+        echo "$(date): Failed to add backup user $BACKUP_USER to sudo group"
         exit 1
     fi
     echo "$(date): Backup user $BACKUP_USER created with sudo access"
@@ -122,8 +133,6 @@ ip_range_to_ips() {
     end_dec=$(($e1 * 16777216 + $e2 * 65536 + $e3 * 256 + $e4))
 
     for ip_dec in $(seq $start_dec $end_dec); do
-        echo "$((ip_dec >> 24 & 255)).$((ip_dec >> 16 & 255
-
         # Convert integers back to IP addresses
         echo "$((ip_dec >> 24 & 255)).$((ip_dec >> 16 & 255)).$((ip_dec >> 8 & 255)).$((ip_dec & 255))"
     done
@@ -158,7 +167,7 @@ configure_firewall() {
         done < "$INPUT_FILE"
         ufw --force enable
         echo "$(date): UFW rules have been updated based on $INPUT_FILE."
-        elif command -v iptables >/dev/null 2>&1; then
+    elif command -v iptables >/dev/null 2>&1; then
         echo "$(date): Configuring firewall with iptables..."
         # Flush existing rules
         iptables -F
@@ -189,6 +198,74 @@ configure_firewall() {
     fi
 }
 
+# Generates the croncheck.sh file
+generate_croncheck_script() {
+    cat > croncheck.sh <<EOL
+#!/bin/bash
+
+# Check if the script is run as root
+if [ "\$(id -u)" -ne 0 ]; then
+  echo "This script must be run as root"
+  exit 1
+fi
+
+# Define the backup user
+BACKUP_USER="$BACKUP_USER"
+
+# Check if the backup user exists
+if ! id "\$BACKUP_USER" >/dev/null 2>&1; then
+  echo "Backup user \$BACKUP_USER does not exist"
+  exit 1
+fi
+
+# Check if the backup user has sudo access
+if ! sudo -l -U "\$BACKUP_USER" >/dev/null 2>&1; then
+  echo "Backup user \$BACKUP_USER does not have sudo access"
+  exit 1
+fi
+
+# Check if the SSH configuration file is unchanged
+SSH_CONFIG="$SSHD_CONFIG"
+if [ "\$(sudo lsattr \$SSH_CONFIG 2>/dev/null)" != "----i---------e--, \$SSH_CONFIG" ]; then
+  echo "SSH configuration file has been modified"
+  exit 1
+fi
+
+# Check if the firewall rules are unchanged
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -qw "active"; then
+  # Check UFW rules
+  if ! ufw status numbered | grep -qw "$NEW_SSH_PORT"; then
+    echo "UFW rules have been modified"
+    exit 1
+  fi
+elif command -v iptables >/dev/null 2>&1; then
+  # Check iptables rules
+  if ! iptables -L INPUT --line-numbers | grep -q "tcp dpt:$NEW_SSH_PORT"; then
+    echo "iptables rules have been modified"
+    exit 1
+  fi
+else
+  echo "No known firewall (ufw or iptables) is active on this system"
+  exit 1
+fi
+
+echo "All checks passed successfully"
+exit 0
+EOL
+
+    chmod +x croncheck.sh
+    echo "$(date): croncheck.sh script generated successfully."
+}
+
+# Generates the cronline.txt file
+generate_cronline_file() {
+    cat > cronline.txt <<EOL
+0 * * * * $(pwd)/croncheck.sh || echo "\$(date): Script execution failed" >> /var/log/croncheck_failure.log
+EOL
+
+    echo "$(date): cronline.txt file generated successfully."
+}
+
 # Main function to execute the script
 main() {
     check_run_as_root
@@ -196,11 +273,14 @@ main() {
     EXCLUDE_USER=$1
     NEW_SSH_PORT=2298  # Define your SSH port here
     INPUT_FILE="allowed_ips.txt"  # Define your input file name here
+    validate_ssh_port "$NEW_SSH_PORT"
     setup_passwords
     process_users
     create_backup_user
     update_sshd_config
     configure_firewall
+    generate_croncheck_script
+    generate_cronline_file
     echo "$(date): Operations complete for all users except $EXCLUDE_USER, $BACKUP_USER, and root."
 }
 
