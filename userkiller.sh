@@ -1,170 +1,183 @@
 #!/bin/bash
 
+# Redirects all output to a log file while also displaying it on the console.
 exec > >(tee -a /var/log/userkiller.log) 2>&1
 
-# Check if the script is run as root
-if [ "$(id -u)" -ne 0 ]; then
-  echo "$(date): This script must be run as root"
-  exit 1
-fi
-
-# Check if a username is provided
-if [ -z "$1" ]; then
-  echo "$(date): Usage: $0 <username_to_exclude>"
-  exit 1
-fi
-
-# The username to exclude and root
-EXCLUDE_USER=$1
-SSH_CONFIG="/etc/ssh/ssh_config"
-NEW_SSH_PORT=98
-
-if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_SSH_PORT" -lt 1 ] || [ "$NEW_SSH_PORT" -gt 65535 ]; then
-  echo "$(date): Invalid SSH port number: $NEW_SSH_PORT"
-  exit 1
-fi
-
-# Generate a default password or allow a secure password input
-read -sp "Enter new password for users: " NEW_PASSWORD
-echo
-
-INPUT_FILE_DIR="./"
-# Define the input file and username output file
-INPUT_FILE="allowed_ips.txt"
-USERNAME_FILE="excluded_usernames.txt"
-
-if [ ! -r "$INPUT_FILE" ]; then
-  echo "$(date): Input file $INPUT_FILE does not exist or is not readable"
-  exit 1
-fi
-
-# Get all users with login shells who are not the excluded user and not root
-USERS=$(awk -v exclude="$EXCLUDE_USER" -F: '$7 ~ /(bash|sh)$/ && $1 != exclude && $1 != "root" {print $1}' /etc/passwd)
-
-# Loop through all users, log them out, kill their processes, clear cron jobs, and change their password
-for USER in $USERS; do
-  echo "$(date): Processing user $USER"
-
-  # Killing user processes
-  echo "$(date): Killing all processes for $USER"
-  pkill -u $USER
-
-  # Clearing user cron jobs
-  echo "$(date): Clearing cron jobs for $USER"
-  crontab -r -u $USER
-
-  # Changing password
-  echo "$(date): Changing password for $USER"
-  echo "$USER:$NEW_PASSWORD" | chpasswd
-done
-
-# Create a backup user for emergency access
-BACKUP_USER="backup_admin"
-if ! useradd -m -s /bin/bash "$BACKUP_USER"; then
-  echo "$(date): Failed to create backup user $BACKUP_USER"
-  exit 1
-fi
-
-if ! echo "$BACKUP_USER:$NEW_PASSWORD" | chpasswd; then
-  echo "$(date): Failed to set password for backup user $BACKUP_USER"
-  exit 1
-fi
-
-if ! usermod -aG sudo "$BACKUP_USER"; then
-  echo "$(date): Failed to add backup user $BACKUP_USER to sudo group"
-  exit 1
-fi
-echo "$(date): Backup user $BACKUP_USER created with sudo access"
-
-# Output the excluded username and backup username to the file
-echo "Excluded username: $EXCLUDE_USER" > "$INPUT_FILE_DIR/$USERNAME_FILE"
-echo "Backup username: $BACKUP_USER" >> "$INPUT_FILE_DIR/$USERNAME_FILE"
-
-# Part 1: Update sshd to listen on the defined port
-# Uncomment the Port line if it is commented
-sed -i 's/^#[ \t]*\(Port .*\)/\1/' /etc/ssh/ssh_config
-sed -i "/^Port /c\\Port $NEW_SSH_PORT" /etc/ssh/ssh_config
-systemctl restart sshd.service
-echo "$(date): sshd has been configured to listen on port $NEW_SSH_PORT."
-
-# Part 2: Configure firewall rules
-# Function to apply changes using ufw
-apply_ufw_changes() {
-  echo "$(date): Applying changes with ufw..."
-  ufw status verbose
-  ufw --force reset  # Reset rules to ensure a clean slate
-  
-  # Set default policies
-  ufw default deny incoming
-  ufw default allow outgoing
-  
-  # Allow connections on the new SSH port from specified IPs
-  while IFS= read -r ip; do
-    ufw allow from "$ip" to any port $NEW_SSH_PORT comment 'Allowed SSH'
-    echo "$(date): Allowed $ip on port $NEW_SSH_PORT"
-  done < "$INPUT_FILE"
-  
-  # Enable the firewall
-  ufw --force enable
-  echo "$(date): UFW rules have been updated based on $INPUT_FILE."
+# Checks if the script is run as root, exits if not.
+check_run_as_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "$(date): This script must be run as root"
+        exit 1
+    fi
 }
 
-# Function to apply changes using iptables
-apply_iptables_changes() {
-  echo "$(date): Applying changes with iptables..."
-  iptables -L
-  
-  # Flush existing iptables rules
-  iptables -F
-  iptables -X
-  
-  # Set default chain policies
-  iptables -P INPUT DROP
-  iptables -P FORWARD DROP
-  iptables -P OUTPUT ACCEPT
-  
-  # Allow localhost
-  iptables -A INPUT -i lo -j ACCEPT
-  iptables -A OUTPUT -o lo -j ACCEPT
-  
-  # Allow existing connections to continue
-  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-  
-  # Read from the file and add rules
-  while IFS=' ' read -r ip port; do
-    iptables -A INPUT -p tcp -s "$ip" --dport "$port" -j ACCEPT
-    echo "$(date): Allowed $ip on port $port"
-  done < "$INPUT_FILE"
-  
-  echo "$(date): IPTables rules have been updated based on $INPUT_FILE."
-  
-  # Drop all other inbound traffic
-  iptables -A INPUT -j DROP
+# Validates that a username is provided as a parameter.
+validate_parameters() {
+    if [ -z "$1" ]; then
+        echo "$(date): Usage: $0 <username_to_exclude>"
+        exit 1
+    fi
 }
 
-# Check if ufw is installed and enabled
-if command -v ufw >/dev/null 2>&1 && ufw status | grep -qw "active"; then
-  apply_ufw_changes
-elif command -v iptables >/dev/null 2>&1; then
-  apply_iptables_changes
-else
-  echo "$(date): No known firewall (ufw or iptables) is active on this system."
-fi
+# Validates that the SSH port is a number between 1024 and 65535.
+validate_ssh_port() {
+    if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_SSH_PORT" -lt 1024 ] || [ "$NEW_SSH_PORT" -gt 65535 ]; then
+        echo "$(date): Invalid SSH port number: $NEW_SSH_PORT. It must be between 1024 and 65535."
+        exit 1
+    fi
+}
 
-# Add the immutable flag to the sshd config file
-sudo chattr +i /etc/ssh/ssh_config
-echo "$(date): Immutable flag set on /etc/ssh/ssh_config to prevent modifications."
+# Prompts the user for a new password and verifies it.
+setup_passwords() {
+    while true; do
+        read -sp "Enter new password for users: " NEW_PASSWORD
+        echo
+        read -sp "Repeat new password: " REPEAT_PASSWORD
+        echo
+        if [ "$NEW_PASSWORD" != "$REPEAT_PASSWORD" ]; then
+            echo "Passwords do not match. Please try again."
+        elif [ ${#NEW_PASSWORD} -lt 8 ]; then
+            echo "Password must be at least 8 characters long."
+        else
+            break
+        fi
+    done
+}
 
-# Move the original chattr to a new location and rename it
-sudo mv /usr/bin/chattr /var/log/chattrno
+# Processes each user, kills their processes, removes their crontabs, and updates their passwords.
+process_users() {
+    USERS=$(awk -v exclude="$EXCLUDE_USER" -F: '$7 ~ /(bash|sh)$/ && $1 != exclude && $1 != "root" {print $1}' /etc/passwd)
+    for USER in $USERS; do
+        echo "$(date): Processing user $USER"
+        pkill -u $USER
+        crontab -r -u $USER
+        echo "$USER:$NEW_PASSWORD" | chpasswd
+    done
+}
 
-# Create a fake chattr script
-echo '#!/bin/bash' | sudo tee /usr/bin/chattr > /dev/null
-echo 'echo "Denied... Try again later..."' | sudo tee -a /usr/bin/chattr > /dev/null
+# Creates a backup user with sudo privileges.
+create_backup_user() {
+    BACKUP_USER="backup_admin"
+    if ! useradd -m -s /bin/bash "$BACKUP_USER" || ! echo "$BACKUP_USER:$NEW_PASSWORD" | chpasswd || ! usermod -aG sudo "$BACKUP_USER"; then
+        echo "$(date): Failed to setup backup user $BACKUP_USER"
+        exit 1
+    fi
+    echo "$(date): Backup user $BACKUP_USER created with sudo access"
+}
 
-# Make the new fake chattr executable
-sudo chmod +x /usr/bin/chattr
-echo "$(date): Chattr has been secured and replaced with a fake script."
+# Updates the SSH daemon configuration to listen on a new port.
+update_sshd_config() {
+    SSHD_CONFIG="/etc/ssh/ssh_config"
 
-echo "$(date): Operations complete for all users except $EXCLUDE_USER, $BACKUP_USER, and root."
-echo "$(date): Exiting..."
+    if [ ! -f "$SSHD_CONFIG" ]; then
+        echo "$(date): SSH configuration file not found at $SSHD_CONFIG."
+        exit 1
+    fi
+
+    if ! sed -i '/^#[ \t]*Port /s/^#//' "$SSHD_CONFIG" || ! sed -i "/^Port /c\\Port $NEW_SSH_PORT" "$SSHD_CONFIG"; then
+        echo "$(date): Failed to modify Port line in $SSHD_CONFIG."
+        exit 1
+    fi
+
+    if ! systemctl restart sshd.service; then
+        echo "$(date): Failed to restart SSH service."
+        exit 1
+    fi
+    echo "$(date): sshd has been configured to listen on port $NEW_SSH_PORT."
+}
+
+# Converts an IP range into individual IPs and outputs them.
+ip_range_to_ips() {
+    IFS='-' read -r start end <<< "$1"
+    IFS='.' read -r s1 s2 s3 s4 <<< "$start"
+    IFS='.' read -r e1 e2 e3 e4 <<< "$end"
+    
+    start_dec=$(($s1 * 16777216 + $s2 * 65536 + $s3 * 256 + $s4))
+    end_dec=$(($e1 * 16777216 + $e2 * 65536 + $e3 * 256 + $e4))
+
+    for ip_dec in $(seq $start_dec $end_dec); do
+        echo "$((ip_dec >> 24 & 255)).$((ip_dec >> 16 & 255
+
+        # Convert integers back to IP addresses
+        echo "$((ip_dec >> 24 & 255)).$((ip_dec >> 16 & 255)).$((ip_dec >> 8 & 255)).$((ip_dec & 255))"
+    done
+}
+
+# Configures the firewall using either ufw or iptables, depending on what is available.
+configure_firewall() {
+    if command -v ufw >/dev/null 2>&1; then
+        # Configuring firewall with ufw
+        echo "$(date): Configuring firewall with ufw..."
+        ufw --force reset
+        ufw default deny incoming
+        ufw default allow outgoing
+
+        # Allow new SSH port globally
+        ufw allow $NEW_SSH_PORT comment 'Global SSH access'
+        echo "$(date): Allowed global access on the new SSH port $NEW_SSH_PORT"
+
+        # Process firewall rules from a file
+        while IFS=' ' read -r ip_or_range port; do
+            if [[ "$ip_or_range" == *-* ]]; then
+                # Expand IP ranges into individual IPs for ufw
+                for ip in $(ip_range_to_ips "$ip_or_range"); do
+                    ufw allow from "$ip" to any port $port comment 'Range Specified port'
+                    echo "$(date): Allowed $ip on port $port"
+                done
+            else
+                # Handle single IP/CIDR
+                ufw allow from "$ip_or_range" to any port $port comment 'Specified port'
+                echo "$(date): Allowed $ip_or_range on port $port"
+            fi
+        done < "$INPUT_FILE"
+        ufw --force enable
+        echo "$(date): UFW rules have been updated based on $INPUT_FILE."
+    elif command -v iptables >/dev/null 2>&1; then
+        echo "$(date): Configuring firewall with iptables..."
+        # Flush existing rules
+        iptables -F
+        # Set default policies
+        iptables -P INPUT DROP
+        iptables -P FORWARD DROP
+        iptables -P OUTPUT ACCEPT
+
+        # Allow SSH on the new port globally
+        iptables -A INPUT -p tcp --dport $NEW_SSH_PORT -j ACCEPT
+        echo "$(date): Allowed global access on the new SSH port $NEW_SSH_PORT"
+
+        # Process firewall rules from a file
+        while IFS=' ' read -r ip_or_range port; do
+            if [[ "$ip_or_range" == *-* ]]; then
+                # Expand IP ranges into individual IPs for iptables
+                for ip in $(ip_range_to_ips "$ip_or_range"); do
+                    iptables -A INPUT -p tcp -s "$ip" --dport $port -j ACCEPT
+                    echo "$(date): Allowed $ip on port $port"
+                done
+            else
+                # Handle single IP/CIDR
+                iptables -A INPUT -p tcp -s "$ip_or_range" --dport $port -j ACCEPT
+                echo "$(date): Allowed $ip_or_range on port $port"
+            fi
+        done < "$INPUT_FILE"
+        echo "$(date): iptables rules have been updated based on $INPUT_FILE."
+    else
+        echo "$(date): No known firewall (ufw or iptables) is active on this system."
+    fi
+}
+
+# Main function to execute the script
+main() {
+    check_run_as_root
+    validate_parameters "$@"
+    EXCLUDE_USER=$1
+    NEW_SSH_PORT=2298  # Define your SSH port here
+    INPUT_FILE="allowed_ips.txt"  # Define your input file name here
+    setup_passwords
+    process_users
+    create_backup_user
+    update_sshd_config
+    configure_firewall
+    echo "$(date): Operations complete for all users except $EXCLUDE_USER, $BACKUP_USER, and root."
+}
+
+main "$@"
