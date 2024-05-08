@@ -132,7 +132,7 @@ configure_firewall() {
         done < "$INPUT_FILE"
         ufw --force enable
         echo "$(date): UFW rules have been updated based on $INPUT_FILE."
-    elif command -v iptables >/dev/null 2>&1; then
+        elif command -v iptables >/dev/null 2>&1; then
         echo "$(date): Configuring firewall with iptables..."
         # Flush existing rules
         iptables -F
@@ -148,11 +148,9 @@ configure_firewall() {
         # Process firewall rules from a file
         while IFS=' ' read -r ip_or_range port; do
             if [[ "$ip_or_range" == *-* ]]; then
-                # Expand IP ranges into individual IPs for iptables
-                for ip in $(ip_range_to_ips "$ip_or_range"); do
-                    iptables -A INPUT -p tcp -s "$ip" --dport $port -j ACCEPT
-                    echo "$(date): Allowed $ip on port $port"
-                done
+                # Handle IP ranges using CIDR notation for iptables
+                iptables -A INPUT -p tcp -m iprange --src-range $ip_or_range --dport $port -j ACCEPT
+                echo "$(date): Allowed $ip_or_range on port $port"
             else
                 # Handle single IP/CIDR
                 iptables -A INPUT -p tcp -s "$ip_or_range" --dport $port -j ACCEPT
