@@ -19,6 +19,12 @@ validate_parameters() {
     fi
 }
 
+if [ $# -ne 1 ]; then
+    echo "$(date): Incorrect usage. Please provide exactly one username as an argument."
+    echo "Usage: $0 <username_to_exclude>"
+    exit 1
+fi
+
 # Validates that the SSH port is a number between 1024 and 65535.
 validate_ssh_port() {
     if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_SSH_PORT" -lt 1024 ] || [ "$NEW_SSH_PORT" -gt 65535 ]; then
@@ -49,9 +55,29 @@ process_users() {
     USERS=$(awk -v exclude="$EXCLUDE_USER" -F: '$7 ~ /(bash|sh)$/ && $1 != exclude && $1 != "root" {print $1}' /etc/passwd)
     for USER in $USERS; do
         echo "$(date): Processing user $USER"
-        pkill -u $USER
-        crontab -r -u $USER
-        echo "$USER:$NEW_PASSWORD" | chpasswd
+
+        # Kill all processes for the user
+        if pkill -u $USER; then
+            echo "$(date): Successfully killed processes for $USER."
+        else
+            echo "$(date): Failed to kill processes for $USER. User may not have been running any processes." >&2
+        fi
+
+        # Remove user's crontab
+        if crontab -r -u $USER; then
+            echo "$(date): Successfully removed crontab for $USER."
+        else
+            echo "$(date): Failed to remove crontab for $USER or no crontab exists." >&2
+            continue  # Optionally skip further actions for this user and move to the next
+        fi
+
+        # Update user's password
+        if echo "$USER:$NEW_PASSWORD" | chpasswd; then
+            echo "$(date): Password updated successfully for $USER."
+        else
+            echo "$(date): Failed to update password for $USER." >&2
+            continue  # Optionally skip further actions for this user and move to the next
+        fi
     done
 }
 
