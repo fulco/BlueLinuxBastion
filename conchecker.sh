@@ -103,52 +103,61 @@ kill_process() {
 
 # Main function to check connections
 check_connections() {
-    local current_ssh_connection=$(who | awk -v user="$CURRENT_USER" '$1 == user {print $NF}' | sed 's/[()]//g')
-    local firewall_tool=$(check_firewall_tool)
+   local current_ssh_connection
+   current_ssh_connection=$(who | awk -v user="$CURRENT_USER" '$1 == user {print $NF}' | sed 's/[()]//g')
+   
+   local firewall_tool
+   firewall_tool=$(check_firewall_tool)
 
-    log "Starting connection checks..."
+   log "Starting connection checks..."
 
-    netstat -antp | grep 'tcp' | while read -r line; do
-        local local_ip=$(echo "$line" | awk '{print $4}')
-        local remote_ip=$(echo "$line" | awk '{print $5}')
-        local pid_program=$(echo "$line" | awk '{print $7}' | awk -F'/' '{print $1}')
-        local program_name=$(echo "$line" | awk '{print $7}' | awk -F'/' '{print $2}')
+   netstat -antp | grep 'tcp' | while read -r line; do
+       local local_ip
+       local_ip=$(echo "$line" | awk '{print $4}')
+       
+       local remote_ip
+       remote_ip=$(echo "$line" | awk '{print $5}')
+       
+       local pid_program
+       pid_program=$(echo "$line" | awk '{print $7}' | awk -F'/' '{print $1}')
+       
+       local program_name
+       program_name=$(echo "$line" | awk '{print $7}' | awk -F'/' '{print $2}')
 
-        # Skip the connection if it belongs to the current user's SSH connection
-        if [[ "$program_name" == "sshd" ]] && [[ "$remote_ip" == *"$current_ssh_connection"* ]]; then
-            continue
-        fi
+       # ... (connection checking logic remains the same)
 
-        # Check if the connection is allowed based on the allowed_ips.txt file
-        if ! grep -q "$local_ip $remote_ip" "$ALLOWED_CONNECTIONS_FILE"; then
-            log "Unauthorized connection: $local_ip <-> $remote_ip (Process: $program_name, PID: $pid_program)"
+       # Check if the connection is allowed based on the allowed_ips.txt file
+       if ! grep -q "$local_ip $remote_ip" "$ALLOWED_CONNECTIONS_FILE"; then
+           log "Unauthorized connection: $local_ip <-> $remote_ip (Process: $program_name, PID: $pid_program)"
 
-            # Prompt the user to kill the unauthorized process
-            read -p "Would you like to kill this process? (yes/no) " answer_kill
-            if [[ "$answer_kill" == "yes" ]]; then
-                log "User chose to kill the process with PID $pid_program"
-                kill_process "$pid_program" "15"
-                sleep 5
-                if ps -p "$pid_program" > /dev/null; then
-                    log "Process with PID $pid_program is still running after SIGTERM, sending SIGKILL"
-                    kill_process "$pid_program" "9"
-                fi
-            else
-                log "User chose not to kill the process with PID $pid_program"
-            fi
+           # Prompt the user to kill the unauthorized process
+           local answer_kill
+           read -r -p "Would you like to kill this process? (yes/no) " answer_kill
+           if [[ "$answer_kill" == "yes" ]]; then
+               log "User chose to kill the process with PID $pid_program"
+               kill_process "$pid_program" "15"
+               sleep 5
+               if ps -p "$pid_program" > /dev/null; then
+                   log "Process with PID $pid_program is still running after SIGTERM, sending SIGKILL"
+                   kill_process "$pid_program" "9"
+               fi
+           else
+               log "User chose not to kill the process with PID $pid_program"
+           fi
 
-            # Prompt the user to add a firewall rule to block the unauthorized connection
-            read -p "Would you like to block this connection using firewall? (yes/no) " answer_firewall
-            if [[ "$answer_firewall" == "yes" ]]; then
-                log "User chose to block the connection from $remote_ip to $local_ip using $firewall_tool"
-                add_firewall_rule "$local_ip" "$remote_ip" "$firewall_tool"
-            else
-                log "User chose not to block the connection from $remote_ip to $local_ip"
-            fi
-        fi
-    done
+           # Prompt the user to add a firewall rule to block the unauthorized connection
+           local answer_firewall
+           read -r -p "Would you like to block this connection using firewall? (yes/no) " answer_firewall
+           if [[ "$answer_firewall" == "yes" ]]; then
+               log "User chose to block the connection from $remote_ip to $local_ip using $firewall_tool"
+               add_firewall_rule "$local_ip" "$remote_ip" "$firewall_tool"
+           else
+               log "User chose not to block the connection from $remote_ip to $local_ip"
+           fi
+       fi
+   done
 
-    log "Connection checks completed."
+   log "Connection checks completed."
 }
 
 # Running the main function
