@@ -120,7 +120,7 @@ manage_services() {
     log "Listing enabled and running services..."
     systemctl list-units --type=service --state=running --no-pager
 
-    read -p "Enter the names of services to disable (space-separated), or press Enter to skip: " services_to_disable
+    read -rp "Enter the names of services to disable (space-separated), or press Enter to skip: " services_to_disable
 
     if [ -n "$services_to_disable" ]; then
         for service in $services_to_disable; do
