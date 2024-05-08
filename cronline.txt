@@ -1,0 +1,1 @@
+0 * * * * /path/to/script.sh || echo "$(date): Script execution failed" >> /var/log/script_failure.log

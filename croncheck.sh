@@ -8,16 +8,6 @@ fi
 
 # Define the backup user
 BACKUP_USER="backup_admin"
-$INPUT_FILE_DIR = "./"
-# Define the input file and username output file
-INPUT_FILE="allowed_ips.txt"
-USERNAME_FILE="excluded_usernames.txt"
-
-# Output the excluded username and backup username to the file
-echo "Excluded username: $EXCLUDE_USER"
-echo "Backup username: $BACKUP_USER"
-echo $EXCLUDE_USER > "$INPUT_FILE_DIR/$USERNAME_FILE"
-echo  $BACKUP_USER >> "$INPUT_FILE_DIR/$USERNAME_FILE"
 
 # Check if the backup user exists
 if id "$BACKUP_USER" >/dev/null 2>&1; then
