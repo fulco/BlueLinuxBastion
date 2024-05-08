@@ -1,78 +1,63 @@
-# Linux System Hardening Scripts
+# Blue Linux Bastion: Linux System Hardening Scripts
 
-This repository contains a set of scripts designed to harden Linux systems, particularly for competitions, by performing a series of security-focused tasks. It is intended to be used by blue teams to lock down a system and enhance its security posture.
+This repository contains a set of scripts designed to enhance the security of Linux systems. These scripts are ideal for blue teams during security competitions or for anyone looking to implement stringent security measures on their Linux systems.
 
-![a-captivating-3d-render-illustration-of-a-fortifie-p-ujbcuIQmiC5cFKNzGclg-SaUKsmqTQTWg8K9Vjn6gxA](https://github.com/fulco/BlueLinuxBastion/assets/802660/52bd88c5-a985-4ed2-af29-9698733b0198)
+![Image of the Bastion](https://github.com/fulco/BlueLinuxBastion/assets/802660/52bd88c5-a985-4ed2-af29-9698733b0198)
 
-## Scripts
+
+## Scripts Overview
 
 ### userkiller.sh
-
-This script is the main hardening script that performs the following tasks:
-- Logs out all users (except the specified user and root) and kills their processes
-- Clears cron jobs for all users (except the specified user and root)
-- Changes passwords for all users (except the specified user and root)
-- Updates the SSH daemon (sshd) to listen on a custom port (defined by `$NEW_SSH_PORT`)
-- Configures firewall rules using UFW (Uncomplicated Firewall) or iptables based on a specified input file
-- Adds the immutable flag to the sshd configuration file to prevent modifications
-- Secures the `chattr` command by moving the original binary and replacing it with a fake script
-- Creates a backup admin user with sudo access for emergency purposes
-- Logs script actions to a file for future reference and troubleshooting
+- Logs out and kills processes for all non-essential users.
+- Clears non-essential user cron jobs and updates their passwords.
+- Updates SSH to listen on a custom port and configures firewall rules.
+- Secures key system files and commands to prevent tampering.
+- Adds a backup admin user with sudo access for emergencies.
+- Detailed logging of actions for auditing and troubleshooting.
 
 ### croncheck.sh
-
-This script is designed to be run periodically via cron to ensure that the system remains hardened. It performs the following checks:
-- Verifies that the backup admin user exists and has sudo access
-- Checks if the SSH configuration file is unchanged and has the immutable flag set
-- Checks if the firewall rules are unchanged based on the defined rules (port specified by `$NEW_SSH_PORT`)
+- Regularly verifies the integrity of key system configurations to ensure ongoing compliance with hardening standards.
+- Checks include verifying backup admin user presence and privileges, immutability of SSH configurations, and firewall rules consistency.
 
 ### cronline.txt
+- Provides a sample cron job setup to automate the execution of `croncheck.sh` and logs failures for administrative review.
 
-This file contains an example cron entry to run the `croncheck.sh` script periodically and log any failures to the `/var/log/script_failure.log` file.
+## Getting Started
 
-## Usage
+### Prerequisites
+- Root access is required.
+- Input a user (your primary user) to not change. 
+- Either UFW or iptables must be installed for firewall configuration.
+- An input file named `allowed_ips.txt` containing IP addresses and ports for SSH access should be prepared.
 
-1. Clone the repository or download the script files.
-2. Make the scripts executable using the command: `chmod +x userkiller.sh croncheck.sh`.
-3. Run the `userkiller.sh` script with root privileges and provide the username to exclude as an argument:
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/fulco/BlueLinuxBastion.git
    ```
+2. Make the scripts executable:
+   ```bash
+   chmod +x userkiller.sh croncheck.sh
+   ```
+
+### Usage
+1. Execute the `userkiller.sh` script with a username to exclude from the hardening process:
+   ```bash
    sudo ./userkiller.sh <username_to_exclude>
    ```
-4. Enter the new password for the users when prompted.
-5. The script will perform the hardening tasks and display relevant information.
-6. Set up a cron job to run the `croncheck.sh` script periodically to ensure the system remains hardened. Modify the `cronline.txt` file with the appropriate path to the script and add it to your crontab.
-
-## Prerequisites
-
-- The scripts must be run with root privileges.
-- The system should have either UFW or iptables installed for configuring firewall rules.
-- An input file (`allowed_ips.txt`) should be created, containing the allowed IP addresses and ports for SSH access.
+2. Follow the prompts to set new user passwords.
+3. Set up a cron job using the contents of `cronline.txt` to maintain system hardening.
 
 ## Configuration
+- Modify `userkiller.sh` to set the `NEW_SSH_PORT` or change the log file path.
+- Edit `cronline.txt` to match the desired cron schedule and script path.
 
-- The `allowed_ips.txt` file should contain the allowed IP addresses and ports for access in this format:
-   ```
-   192.168.1.23 98
-   192.168.1.45 8080
-   ```
-- The `userkiller.sh` script sets the SSH port using the `$NEW_SSH_PORT` variable. By default, it is set to 98. If needed, you can modify the value of `$NEW_SSH_PORT` in the script.
-- The `userkiller.sh` script logs its actions to the `/var/log/userkiller.log` file. You can change the log file path by modifying the `exec` command at the beginning of the script.
-- Modify the command contained in the `cronline.txt` file to specify the desired frequency and path for running the `croncheck.sh` script and install to the root crontab.
-
-## Password Complexity
-
-It is recommended to enforce strong password complexity requirements when setting new passwords for users. You can modify the `userkiller.sh` script to include password validation checks to ensure that the `$NEW_PASSWORD` meets the desired complexity criteria.
-
-## Logging
-
-The `userkiller.sh` script logs its actions to the `/var/log/userkiller.log` file. Each log entry includes a timestamp to track when each action was performed. You can review this log file for troubleshooting and auditing purposes.
-
-The `croncheck.sh` script logs any failures to the `/var/log/script_failure.log` file, as specified in the `cronline.txt` file. Each failure entry includes a timestamp and an indication that the script execution failed.
-
-## Disclaimer
-
-These scripts are provided as-is and should be used with caution. It is recommended to test the scripts in a non-production environment before applying them to critical systems. The scripts make significant changes to user accounts, processes, and system configurations, so ensure that you have appropriate backups and understand the implications of running the scripts.
+## Contributing
+Contributions to improve the scripts or documentation are welcome. Please submit pull requests for review.
 
 ## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-This project is released under the [MIT License](https://opensource.org/licenses/MIT).
+## Disclaimer
+Use these scripts with caution. They are provided as-is, and you should test them in a controlled environment before applying them to production systems.
+```
