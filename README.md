@@ -2,6 +2,8 @@
 
 This repository contains a set of scripts designed to harden Linux systems, particularly for competitions, by performing a series of security-focused tasks. It is intended to be used by blue teams to lock down a system and enhance its security posture.
 
+![alt text](https://img1.wsimg.com/isteam/ip/588326ca-4aed-489f-bea9-7ee314e84591/a-captivating-3d-render-illustration-of-a-fort.jpg/)
+
 ## Scripts
 
 ### userkiller.sh
