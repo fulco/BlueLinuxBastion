@@ -55,7 +55,7 @@ This file contains an example cron entry to run the `croncheck.sh` script period
    ```
 - The `userkiller.sh` script sets the SSH port using the `$NEW_SSH_PORT` variable. By default, it is set to 98. If needed, you can modify the value of `$NEW_SSH_PORT` in the script.
 - The `userkiller.sh` script logs its actions to the `/var/log/userkiller.log` file. You can change the log file path by modifying the `exec` command at the beginning of the script.
-- Modify the `cronline.txt` file to specify the desired frequency and path for running the `croncheck.sh` script.
+- Modify the command contained in the `cronline.txt` file to specify the desired frequency and path for running the `croncheck.sh` script and install to the root crontab.
 
 ## Password Complexity
 
