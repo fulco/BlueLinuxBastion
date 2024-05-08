@@ -115,9 +115,29 @@ create_backup_user() {
     fi
 }
 
-# Updates the SSH daemon configuration to listen on a new port.
+# Function to manage services
+manage_services() {
+    log "Listing enabled and running services..."
+    systemctl list-units --type=service --state=running --no-pager
+
+    read -p "Enter the names of services to disable (space-separated), or press Enter to skip: " services_to_disable
+
+    if [ -n "$services_to_disable" ]; then
+        for service in $services_to_disable; do
+            log "Stopping and disabling service: $service"
+            if systemctl stop "$service" && systemctl disable "$service"; then
+                log "Service $service has been stopped and disabled successfully."
+            else
+                log "Failed to stop or disable service: $service"
+            fi
+        done
+    else
+        log "No services selected for disabling."
+    fi
+}
+
+# Updates the SSH daemon configuration to listen on a new port and disables root user login.
 update_sshd_config() {
-    SSHD_CONFIG="/etc/ssh/ssh_config"
 
     if [ ! -f "$SSHD_CONFIG" ]; then
         log "SSH configuration file not found at $SSHD_CONFIG."
@@ -129,11 +149,19 @@ update_sshd_config() {
         exit 1
     fi
 
+	if grep -q "^PermitRootLogin" "$SSHD_CONFIG"; then
+        sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
+        log "PermitRootLogin has been set to 'no' in $SSHD_CONFIG."
+    else
+        echo "PermitRootLogin no" >> "$SSHD_CONFIG"
+        log "PermitRootLogin 'no' has been added to $SSHD_CONFIG."
+    fi
+
     if ! systemctl restart sshd.service; then
         log "Failed to restart SSH service."
         exit 1
     fi
-    log "sshd has been configured to listen on port $NEW_SSH_PORT."
+    log "sshd has been configured to listen on port $NEW_SSH_PORT and disabled root user login."
 }
 
 # Converts an IP range into individual IPs and outputs them.
@@ -293,13 +321,13 @@ main() {
     NEW_SSH_PORT=2298  # Define your SSH port here
     INPUT_FILE="allowed_ips.txt"  # Define your input file name here
     validate_ssh_port "$NEW_SSH_PORT"
+	SSHD_CONFIG="/etc/ssh/ssh_config"
     setup_passwords
-
     log_processes  # Log processes before making changes
-
     process_users
     create_backup_user
     update_sshd_config
+	manage_services
     configure_firewall
     generate_croncheck_script
     generate_cronline_file
