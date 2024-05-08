@@ -2,7 +2,7 @@
 
 This repository contains a set of scripts designed to harden Linux systems, particularly for competitions, by performing a series of security-focused tasks. It is intended to be used by blue teams to lock down a system and enhance its security posture.
 
-![alt text](https://img1.wsimg.com/isteam/ip/588326ca-4aed-489f-bea9-7ee314e84591/a-captivating-3d-render-illustration-of-a-fort.jpg/)
+![a-captivating-3d-render-illustration-of-a-fortifie-p-ujbcuIQmiC5cFKNzGclg-SaUKsmqTQTWg8K9Vjn6gxA](https://github.com/fulco/BlueLinuxBastion/assets/802660/52bd88c5-a985-4ed2-af29-9698733b0198)
 
 ## Scripts
 
