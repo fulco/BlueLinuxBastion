@@ -43,7 +43,7 @@ The `conchecker.sh` script is a new addition that monitors network connections o
 
 ## Usage, Prerequisites, Configuration, and More
 
-For detailed information on how to use these scripts, including prerequisites, configuration, troubleshooting, and more, please refer to the [Blue Linux Bastion Wiki](https://github.com/fulco/BlueLinuxBastion/wiki/main).
+For detailed information on how to use these scripts, including prerequisites, configuration, troubleshooting, and more, please refer to the [Blue Linux Bastion Wiki](https://github.com/fulco/BlueLinuxBastion/wiki).
 
 ## Contributing
 
