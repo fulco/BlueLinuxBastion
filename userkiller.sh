@@ -137,6 +137,7 @@ manage_services() {
 }
 
 # Updates the SSH daemon configuration to listen on a new port and disables root user login.
+# Set the immutable flag on the SSH configuration file, moves the default chattr file to /var/log/chatol, and creates a script to replace it.
 update_sshd_config() {
 
     if [ ! -f "$SSHD_CONFIG" ]; then
@@ -149,7 +150,7 @@ update_sshd_config() {
         exit 1
     fi
 
-	if grep -q "^PermitRootLogin" "$SSHD_CONFIG"; then
+    if grep -q "^PermitRootLogin" "$SSHD_CONFIG"; then
         sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
         log "PermitRootLogin has been set to 'no' in $SSHD_CONFIG."
     else
@@ -162,6 +163,30 @@ update_sshd_config() {
         exit 1
     fi
     log "sshd has been configured to listen on port $NEW_SSH_PORT and disabled root user login."
+
+    # Set the immutable flag on the SSH configuration file
+    if chattr +i "$SSHD_CONFIG"; then
+        log "Immutable flag set on $SSHD_CONFIG."
+    else
+        log "Failed to set immutable flag on $SSHD_CONFIG."
+        exit 1
+    fi
+
+    # Move the default chattr file to /var/log/chatol
+    if mv /usr/bin/chattr /var/log/chatol; then
+        log "Default chattr file moved to /var/log/chatol."
+    else
+        log "Failed to move default chattr file to /var/log/chatol."
+        exit 1
+    fi
+
+    # Create a script to replace the default chattr file
+    cat > /usr/bin/chattr <<EOL
+#!/bin/bash
+echo "Oops..."
+EOL
+    chmod +x /usr/bin/chattr
+    log "Replaced chattr file with a script."
 }
 
 # Converts an IP range into individual IPs and outputs them.
