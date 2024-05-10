@@ -15,7 +15,7 @@ This script is the main hardening script that performs the following tasks:
 - Updates the SSH daemon (sshd) to listen on a custom port (defined by `$NEW_SSH_PORT`)
 - Configures firewall rules using UFW (Uncomplicated Firewall) or iptables based on a specified input file
 - Creates a backup admin user with sudo access for emergency purposes
-- Logs script actions to a file for future reference and troubleshooting
+- Logs script actions to a file for future reference and troubleshooting (default log file: `/var/log/userkiller.log`, can be changed with an optional argument)
 - Generates the `croncheck.sh` script and `cronline.txt` file for periodic system checks
 - Manages system services by displaying enabled and running services and allowing the user to selectively disable non-needed services
 
