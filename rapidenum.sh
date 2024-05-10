@@ -33,7 +33,7 @@ if [ $# -ne 1 ]; then
   exit 1
 fi
 
-network_range=$1
+network_range="$1"
 
 # Check if Nmap is installed
 if ! command -v nmap &> /dev/null; then
@@ -107,9 +107,9 @@ for service in "${services[@]:-${!services_tcp[@]} ${!services_udp[@]}}"; do
   output_file="$output_dir/${service}_hosts.txt"
 
   if [ "$protocol" = "TCP" ]; then
-    nmap -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - $live_hosts | awk '/Status: Open/{print $2}' > "$output_file"
+    nmap -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - "$live_hosts" | awk '/Status: Open/{print $2}' > "$output_file"
   else
-    nmap -sU -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - $live_hosts | awk '/Status: Open/{print $2}' > "$output_file"
+    nmap -sU -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - "$live_hosts" | awk '/Status: Open/{print $2}' > "$output_file"
   fi
 
   echo "Scan results saved to $output_file"
