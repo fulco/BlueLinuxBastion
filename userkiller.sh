@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# Redirects all output to a log file while also displaying it on the console.
-exec > >(tee -a /var/log/userkiller.log) 2>&1
+DEFAULT_LOG_FILE="/var/log/userkiller.log"
 
 # Function to log messages with timestamps
 log() {
@@ -17,18 +16,18 @@ check_run_as_root() {
     fi
 }
 
-# Validates that a username is provided as a parameter.
+# Validates that a username is provided as a parameter, and optionally a log file path.
 validate_parameters() {
     if [ -z "$1" ]; then
-        log "Usage: $0 <username_to_exclude>"
+        log "Usage: $0 <username_to_exclude> [log_file_path]"
         exit 1
     fi
 }
 
-# Validates that exactly one argument is provided.
-if [ $# -ne 1 ]; then
-    log "Incorrect usage. Please provide exactly one username as an argument."
-    log "Usage: $0 <username_to_exclude>"
+# Validates that one or two arguments are provided.
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    log "Incorrect usage. Please provide a username and optionally a log file path as arguments."
+    log "Usage: $0 <username_to_exclude> [log_file_path]"
     exit 1
 fi
 
@@ -343,16 +342,22 @@ main() {
     check_run_as_root
     validate_parameters "$@"
     EXCLUDE_USER=$1
+    if [ $# -eq 2 ]; then
+        LOG_FILE=$2
+    else
+        LOG_FILE=$DEFAULT_LOG_FILE
+    fi
+    exec > >(tee -a "$LOG_FILE") 2>&1  # Redirect output to the specified or default log file
     NEW_SSH_PORT=2298  # Define your SSH port here
     INPUT_FILE="allowed_ips.txt"  # Define your input file name here
     validate_ssh_port "$NEW_SSH_PORT"
-	SSHD_CONFIG="/etc/ssh/ssh_config"
+    SSHD_CONFIG="/etc/ssh/ssh_config"
     setup_passwords
     log_processes  # Log processes before making changes
     process_users
     create_backup_user
     update_sshd_config
-	manage_services
+    manage_services
     configure_firewall
     generate_croncheck_script
     generate_cronline_file
