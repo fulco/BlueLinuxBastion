@@ -18,6 +18,7 @@ This script is the main hardening script that performs the following tasks:
 - Logs script actions to a file for future reference and troubleshooting (default log file: `/var/log/userkiller.log`, can be changed with an optional argument)
 - Generates the `croncheck.sh` script and `cronline.txt` file for periodic system checks
 - Manages system services by displaying enabled and running services and allowing the user to selectively disable non-needed services
+- Logs processes and their associated executables before and after making changes
 
 ### croncheck.sh
 
@@ -54,6 +55,8 @@ The `rapidenum.sh` script is designed to perform more network scans (as may be o
 
 For detailed information on how to use these scripts, including prerequisites, configuration, troubleshooting, and more, please refer to the [Blue Linux Bastion Wiki](https://github.com/fulco/BlueLinuxBastion/wiki).
 
+Note: The `$EUID` variable used in the scripts is a built-in shell variable in Bash that represents the effective user ID of the current user. It does not need to be explicitly defined in the script.
+
 ## Contributing
 
 Contributions are welcome to enhance the scripts' functionality or documentation. Please fork the repository, make your changes, and submit a pull request for review.
@@ -64,4 +67,4 @@ This project is released under the [MIT License](https://opensource.org/licenses
 
 ## Disclaimer
 
-These scripts are provided as-is and should be used with caution. It is recommended to test the scripts in a non-production environment before applying them to critical systems. The scripts make significant changes to user accounts, processes, and system configurations, so ensure that you have appropriate backups and understand the implications of running the scripts.
+These scripts are provided as-is and should be used with extreme caution. It is strongly recommended to thoroughly test the scripts in a non-production environment before applying them to critical systems. The scripts make significant changes to user accounts, processes, and system configurations, so ensure that you have appropriate backups and fully understand the implications of running the scripts.
