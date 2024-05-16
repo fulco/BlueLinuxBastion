@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
 
 # Constants
 readonly NEW_SSH_PORT=2298
@@ -10,6 +12,12 @@ log() {
     local message="$1"
     echo "$(date '+%Y-%m-%d %H:%M:%S'): $message" | tee -a "$LOG_FILE"
 }
+
+# Ensure log file is writable
+if [[ ! -w "$(dirname "$LOG_FILE")" ]]; then
+    echo "Error: Log directory is not writable."
+    exit 1
+fi
 
 # Check if the script is run as root
 if [[ $EUID -ne 0 ]]; then
@@ -33,24 +41,15 @@ if [[ ! -f "$ALLOWED_CONNECTIONS_FILE" || ! -s "$ALLOWED_CONNECTIONS_FILE" ]]; t
     exit 1
 fi
 
-# Function to check for the availability of firewall tools
-get_firewall_tool() {
-    if command -v ufw &> /dev/null; then
-        echo "ufw"
-    elif command -v iptables &> /dev/null; then
-        echo "iptables"
-    else
-        echo "none"
-    fi
-}
+# Get firewall tool
+FIREWALL_TOOL=$(command -v ufw || command -v iptables || echo "none")
 
 # Function to add firewall rules
 add_firewall_rule() {
     local local_ip="$1"
     local remote_ip="$2"
-    local tool="$3"
 
-    case "$tool" in
+    case "$FIREWALL_TOOL" in
         "ufw")
             ufw deny from "$remote_ip" to "$local_ip"
             log "Firewall rule added using ufw to block $remote_ip to $local_ip"
@@ -78,14 +77,9 @@ check_connections() {
     local current_ssh_connection
     current_ssh_connection=$(who | awk -v user="$CURRENT_USER" '$1 == user {print $NF}' | sed 's/[()]//g')
 
-    local firewall_tool
-    firewall_tool=$(get_firewall_tool)
-
     log "Starting connection checks..."
 
     while read -r line; do
-        local local_ip remote_ip pid_program program_name local_port
-
         if [[ "$line" =~ ^tcp.*ESTABLISHED$ ]]; then
             local_ip=$(echo "$line" | awk '{print $4}')
             remote_ip=$(echo "$line" | awk '{print $5}')
@@ -99,30 +93,34 @@ check_connections() {
             fi
 
             # Check if the connection is allowed based on the allowed_ips.txt file or if the local port matches NEW_SSH_PORT
-            if ! grep -qE "^$remote_ip\s+$local_port$" "$ALLOWED_CONNECTIONS_FILE" && [[ $local_port -ne $NEW_SSH_PORT ]]; then
+            if ! grep -qE "^$remote_ip\s*$local_port$" "$ALLOWED_CONNECTIONS_FILE" && [[ "$local_port" -ne "$NEW_SSH_PORT" ]]; then
                 log "Unauthorized connection: $local_ip <-> $remote_ip (Process: $program_name, PID: $pid_program)"
 
-                # Prompt the user to kill the unauthorized process
-                read -r -p "Do you want to kill this process? (yes/no) " answer_kill
-                if [[ "$answer_kill" =~ ^(yes|y)$ ]]; then
-                    log "User chose to kill the process with PID $pid_program"
-                    kill_process "$pid_program" "15"
-                    sleep 5
-                    if ps -p "$pid_program" > /dev/null; then
-                        log "Process with PID $pid_program is still running after SIGTERM, sending SIGKILL"
-                        kill_process "$pid_program" "9"
+                if $INTERACTIVE; then
+                    # Prompt the user to kill the unauthorized process
+                    read -r -p "Do you want to kill this process? (yes/no) " answer_kill
+                    if [[ "$answer_kill" =~ ^(yes|y)$ ]]; then
+                        log "User chose to kill the process with PID $pid_program"
+                        kill_process "$pid_program" "15"
+                        sleep 5
+                        if ps -p "$pid_program" > /dev/null; then
+                            log "Process with PID $pid_program is still running after SIGTERM, sending SIGKILL"
+                            kill_process "$pid_program" "9"
+                        fi
+                    else
+                        log "User chose not to kill the process with PID $pid_program"
+                    fi
+
+                    # Prompt the user to add a firewall rule to block the unauthorized connection
+                    read -r -p "Do you want to block this connection using firewall? (yes/no) " answer_firewall
+                    if [[ "$answer_firewall" =~ ^(yes|y)$ ]]; then
+                        log "User chose to block the connection from $remote_ip to $local_ip using $FIREWALL_TOOL"
+                        add_firewall_rule "$local_ip" "$remote_ip"
+                    else
+                        log "User chose not to block the connection from $remote_ip to $local_ip"
                     fi
                 else
-                    log "User chose not to kill the process with PID $pid_program"
-                fi
-
-                # Prompt the user to add a firewall rule to block the unauthorized connection
-                read -r -p "Do you want to block this connection using firewall? (yes/no) " answer_firewall
-                if [[ "$answer_firewall" =~ ^(yes|y)$ ]]; then
-                    log "User chose to block the connection from $remote_ip to $local_ip using $firewall_tool"
-                    add_firewall_rule "$local_ip" "$remote_ip" "$firewall_tool"
-                else
-                    log "User chose not to block the connection from $remote_ip to $local_ip"
+                    log "Running in non-interactive mode. Not prompting user for actions."
                 fi
             fi
         fi
@@ -131,5 +129,10 @@ check_connections() {
     log "Connection checks completed."
 }
 
-# Running the main function
-check_connections
+# Main function to encapsulate script logic
+main() {
+    check_connections
+}
+
+# Execute main function
+main "$@"
