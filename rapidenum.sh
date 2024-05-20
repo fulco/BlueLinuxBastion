@@ -116,9 +116,9 @@ for service in "${services[@]:-${!services_tcp[@]} ${!services_udp[@]}}"; do
     output_file="$output_dir/${service}_hosts.txt"
 
     if [[ "$protocol" == "TCP" ]]; then
-        nmap -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - $live_hosts | awk '/Status: Open/{print $2}' > "$output_file"
+        nmap -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - "$live_hosts" | awk '/Status: Open/{print $2}' > "$output_file"
     else
-        nmap -sU -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - $live_hosts | awk '/Status: Open/{print $2}' > "$output_file"
+        nmap -sU -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - "$live_hosts" | awk '/Status: Open/{print $2}' > "$output_file"
     fi
 
     log "Scan results saved to $output_file"
