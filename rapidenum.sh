@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Constants
-DEFAULT_OUTPUT_DIR="./HostServices"
-DEFAULT_MAX_RATE=1000
-DEFAULT_TIMEOUT=600
-LOG_FILE="./scan.log"
+readonly DEFAULT_OUTPUT_DIR="./HostServices"
+readonly DEFAULT_MAX_RATE=1000
+readonly DEFAULT_TIMEOUT=600
+readonly LOG_FILE="./scan.log"
 
 # Function to display usage information
 usage() {
@@ -101,10 +101,10 @@ live_hosts=$(nmap -sn --min-rate "$max_rate" --max-retries 1 --max-rtt-timeout 1
 
 # Perform scans for selected services on live hosts
 for service in "${services[@]:-${!services_tcp[@]} ${!services_udp[@]}}"; do
-    if [[ -v "services_tcp[$service]" ]]; then
+    if [[ -n ${services_tcp[$service]} ]]; then
         port="${services_tcp[$service]}"
         protocol="TCP"
-    elif [[ -v "services_udp[$service]" ]]; then
+    elif [[ -n ${services_udp[$service]} ]]; then
         port="${services_udp[$service]}"
         protocol="UDP"
     else
@@ -115,11 +115,12 @@ for service in "${services[@]:-${!services_tcp[@]} ${!services_udp[@]}}"; do
     log "Scanning for $service ($protocol port $port) on live hosts"
     output_file="$output_dir/${service}_hosts.txt"
 
-    if [[ "$protocol" == "TCP" ]]; then
-        nmap -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - "$live_hosts" | awk '/Status: Open/{print $2}' > "$output_file"
-    else
-        nmap -sU -sV --min-rate "$max_rate" --max-retries 2 --host-timeout "${timeout}s" -p "$port" --open -oG - "$live_hosts" | awk '/Status: Open/{print $2}' > "$output_file"
+    nmap_args=("-sV" "--min-rate" "$max_rate" "--max-retries" "2" "--host-timeout" "${timeout}s" "-p" "$port" "--open" "-oG" "-")
+    if [[ "$protocol" == "UDP" ]]; then
+        nmap_args+=("-sU")
     fi
+
+    nmap "${nmap_args[@]}" "$live_hosts" | awk '/Status: Open/{print $2}' > "$output_file"
 
     log "Scan results saved to $output_file"
     log "Number of live hosts with $service open: $(wc -l < "$output_file")"
